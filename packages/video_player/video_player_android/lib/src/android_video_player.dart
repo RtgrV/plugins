@@ -44,6 +44,7 @@ class AndroidVideoPlayer extends VideoPlayerPlatform {
         packageName = dataSource.package;
         break;
       case DataSourceType.network:
+      case DataSourceType.custom:
         uri = dataSource.uri;
         formatHint = _videoFormatStringMap[dataSource.formatHint];
         httpHeaders = dataSource.httpHeaders;

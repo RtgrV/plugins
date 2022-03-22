@@ -44,6 +44,7 @@ class AVFoundationVideoPlayer extends VideoPlayerPlatform {
         packageName = dataSource.package;
         break;
       case DataSourceType.network:
+      case DataSourceType.custom:
         uri = dataSource.uri;
         formatHint = _videoFormatStringMap[dataSource.formatHint];
         httpHeaders = dataSource.httpHeaders;
@@ -147,10 +148,44 @@ class AVFoundationVideoPlayer extends VideoPlayerPlatform {
           return VideoEvent(eventType: VideoEventType.bufferingStart);
         case 'bufferingEnd':
           return VideoEvent(eventType: VideoEventType.bufferingEnd);
+        case 'fetch_data':
+          final parameters = _parametersInMap(map);
+          return VideoEvent(
+            eventType: VideoEventType.fetchData,
+            dataRequestParameters: parameters,
+          );
+        case 'cancel_fetch_data':
+          final parameters = _parametersInMap(map);
+          return VideoEvent(
+            eventType: VideoEventType.cancelFetchData,
+            dataRequestParameters: parameters,
+          );
         default:
           return VideoEvent(eventType: VideoEventType.unknown);
       }
     });
+  }
+
+  VideoDataRequestParameters _parametersInMap(Map map) {
+    final parameters = map['request'] as Map<dynamic, dynamic>;
+    return VideoDataRequestParameters(
+      id: parameters['id'] as String,
+      uri: Uri.parse(parameters['url'] as String),
+      headers: (parameters['headers'] as Map<dynamic, dynamic>)
+          .cast<String, String>(),
+      finished: (parameters['finished'] as String) == "true",
+      canceled: (parameters['canceled'] as String) == "true",
+      redirectUri: parameters.containsKey('redirect_url')
+          ? Uri.parse(parameters['redirect_url'] as String)
+          : null,
+      redirectHeaders: parameters.containsKey('redirect_headers')
+          ? (parameters['redirect_headers'] as Map<dynamic, dynamic>)
+              .cast<String, String>()
+          : null,
+      dataLength: parameters['data_length'] as int,
+      dataOffset: parameters['data_offset'] as int,
+      requestsAllData: (parameters['data_request_all'] as String) == "true",
+    );
   }
 
   @override
@@ -174,6 +209,7 @@ class AVFoundationVideoPlayer extends VideoPlayerPlatform {
     VideoFormat.hls: 'hls',
     VideoFormat.dash: 'dash',
     VideoFormat.other: 'other',
+    VideoFormat.custom: 'custom',
   };
 
   DurationRange _toDurationRange(dynamic value) {

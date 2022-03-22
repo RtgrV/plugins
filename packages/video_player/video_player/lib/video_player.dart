@@ -211,6 +211,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
       : dataSourceType = DataSourceType.asset,
         formatHint = null,
         httpHeaders = const <String, String>{},
+        onFetchDataRequest = null,
         super(VideoPlayerValue(duration: Duration.zero));
 
   /// Constructs a [VideoPlayerController] playing a video from obtained from
@@ -230,6 +231,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     this.httpHeaders = const <String, String>{},
   })  : dataSourceType = DataSourceType.network,
         package = null,
+        onFetchDataRequest = null,
         super(VideoPlayerValue(duration: Duration.zero));
 
   /// Constructs a [VideoPlayerController] playing a video from a file.
@@ -243,6 +245,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
         package = null,
         formatHint = null,
         httpHeaders = const <String, String>{},
+        onFetchDataRequest = null,
         super(VideoPlayerValue(duration: Duration.zero));
 
   /// Constructs a [VideoPlayerController] playing a video from a contentUri.
@@ -258,6 +261,29 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
         package = null,
         formatHint = null,
         httpHeaders = const <String, String>{},
+        onFetchDataRequest = null,
+        super(VideoPlayerValue(duration: Duration.zero));
+
+  /// Constructs a [VideoPlayerController] playing a video from a custom data source.
+  ///
+  /// The URI for the video is given by the [dataSource] argument and must not be
+  /// null.
+  /// **iOS only**: The Uri cannot start with `http` or `https` as it will
+  /// default to a network data source. The custom scheme must be defined in
+  /// the CFBundleURLTypes array in the Info.plist file of the app.
+  /// **Android only**: The [formatHint] option allows the caller to override
+  /// the video format detection code.
+  /// [httpHeaders] option allows to specify HTTP headers
+  /// for the request to the [dataSource].
+  VideoPlayerController.custom(
+    this.dataSource, {
+    required this.onFetchDataRequest,
+    this.formatHint,
+    this.closedCaptionFile,
+    this.videoPlayerOptions,
+    this.httpHeaders = const <String, String>{},
+  })  : dataSourceType = DataSourceType.custom,
+        package = null,
         super(VideoPlayerValue(duration: Duration.zero));
 
   /// The URI to the video file. This will be in different formats depending on
@@ -289,6 +315,14 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   /// This future will be awaited and the file will be loaded when
   /// [initialize()] is called.
   final Future<ClosedCaptionFile>? closedCaptionFile;
+
+  /// Called when custom [DataSourceType] is set on [dataSourceType].
+  /// The given handler should fetch the appropriate data and send the result
+  /// back to the controller.
+  final void Function(
+    VideoDataRequestParameters parameters,
+    bool cancelRequest,
+  )? onFetchDataRequest;
 
   ClosedCaptionFile? _closedCaptionFile;
   Timer? _timer;
@@ -324,6 +358,14 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
           sourceType: DataSourceType.asset,
           asset: dataSource,
           package: package,
+        );
+        break;
+      case DataSourceType.custom:
+        dataSourceDescription = DataSource(
+          sourceType: DataSourceType.custom,
+          uri: dataSource,
+          formatHint: VideoFormat.custom,
+          httpHeaders: httpHeaders,
         );
         break;
       case DataSourceType.network:
@@ -393,6 +435,28 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
           value = value.copyWith(isBuffering: false);
           break;
         case VideoEventType.unknown:
+          break;
+        case VideoEventType.fetchData:
+          if (onFetchDataRequest == null) {
+            throw StateError(
+                "Controller was requested to fetch data, but no handler was assigned");
+          }
+          if (event.dataRequestParameters == null) {
+            throw StateError(
+                "Controller was requested to fetch data, but no parameters were given");
+          }
+          onFetchDataRequest?.call(event.dataRequestParameters!, false);
+          break;
+        case VideoEventType.cancelFetchData:
+          if (onFetchDataRequest == null) {
+            throw StateError(
+                "Controller was requested to cancel the fetch of data, but no handler was assigned");
+          }
+          if (event.dataRequestParameters == null) {
+            throw StateError(
+                "Controller was requested to cancel the fetch of data, but no parameters were given");
+          }
+          onFetchDataRequest?.call(event.dataRequestParameters!, true);
           break;
       }
     }

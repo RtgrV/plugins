@@ -30,7 +30,7 @@
 }
 @end
 
-@interface FLTVideoPlayer : NSObject <FlutterTexture, FlutterStreamHandler>
+@interface FLTVideoPlayer : NSObject <FlutterTexture, FlutterStreamHandler, AVAssetResourceLoaderDelegate>
 @property(readonly, nonatomic) AVPlayer *player;
 @property(readonly, nonatomic) AVPlayerItemVideoOutput *videoOutput;
 @property(readonly, nonatomic) CADisplayLink *displayLink;
@@ -41,9 +41,12 @@
 @property(nonatomic, readonly) BOOL isPlaying;
 @property(nonatomic) BOOL isLooping;
 @property(nonatomic, readonly) BOOL isInitialized;
+@property (nonatomic, strong) NSMutableDictionary *pendingCustomRequests;
+@property(nonatomic, readonly) dispatch_queue_t loaderQueue;
 - (instancetype)initWithURL:(NSURL *)url
                frameUpdater:(FLTFrameUpdater *)frameUpdater
-                httpHeaders:(nonnull NSDictionary<NSString *, NSString *> *)headers;
+                httpHeaders:(nonnull NSDictionary<NSString *, NSString *> *)headers
+     usesCustomDataFetching:(BOOL)customDataFetchingEnabled;
 @end
 
 static void *timeRangeContext = &timeRangeContext;
@@ -55,9 +58,10 @@ static void *playbackBufferEmptyContext = &playbackBufferEmptyContext;
 static void *playbackBufferFullContext = &playbackBufferFullContext;
 
 @implementation FLTVideoPlayer
+
 - (instancetype)initWithAsset:(NSString *)asset frameUpdater:(FLTFrameUpdater *)frameUpdater {
   NSString *path = [[NSBundle mainBundle] pathForResource:asset ofType:nil];
-  return [self initWithURL:[NSURL fileURLWithPath:path] frameUpdater:frameUpdater httpHeaders:@{}];
+  return [self initWithURL:[NSURL fileURLWithPath:path] frameUpdater:frameUpdater httpHeaders:@{} usesCustomDataFetching:NO];
 }
 
 - (void)addObservers:(AVPlayerItem *)item {
@@ -177,12 +181,24 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
 
 - (instancetype)initWithURL:(NSURL *)url
                frameUpdater:(FLTFrameUpdater *)frameUpdater
-                httpHeaders:(nonnull NSDictionary<NSString *, NSString *> *)headers {
+                httpHeaders:(nonnull NSDictionary<NSString *, NSString *> *)headers
+     usesCustomDataFetching:(BOOL)customDataFetchingEnabled {
   NSDictionary<NSString *, id> *options = nil;
   if ([headers count] != 0) {
     options = @{@"AVURLAssetHTTPHeaderFieldsKey" : headers};
   }
+  _pendingCustomRequests = [NSMutableDictionary dictionary];
+
   AVURLAsset *urlAsset = [AVURLAsset URLAssetWithURL:url options:options];
+
+  // Delegate is only called when the scheme is not http or https,
+  // according to the AVAssetResourceLoaderDelegate implementation
+  if (customDataFetchingEnabled) {
+    dispatch_queue_attr_t qos = dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, -1);
+    _loaderQueue = dispatch_queue_create("loaderQueue", qos);
+    [urlAsset.resourceLoader setDelegate:self queue:_loaderQueue];
+  }
+
   AVPlayerItem *item = [AVPlayerItem playerItemWithAsset:urlAsset];
   return [self initWithPlayerItem:item frameUpdater:frameUpdater];
 }
@@ -464,6 +480,8 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
 - (FlutterError *_Nullable)onListenWithArguments:(id _Nullable)arguments
                                        eventSink:(nonnull FlutterEventSink)events {
   _eventSink = events;
+  [self sendPendingCustomRequests];
+
   // TODO(@recastrodiaz): remove the line below when the race condition is resolved:
   // https://github.com/flutter/flutter/issues/21483
   // This line ensures the 'initialized' event is sent when the event
@@ -495,6 +513,63 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
 - (void)dispose {
   [self disposeSansEventChannel];
   [_eventChannel setStreamHandler:nil];
+}
+
+NSString * const fetchDataKey = @"fetch_data";
+NSString * const cancelFetchDataKey = @"cancel_fetch_data";
+
+- (void)sendPendingCustomRequests {
+  for(NSString *identifier in self.pendingCustomRequests) {
+    AVAssetResourceLoadingRequest *loadingRequest = self.pendingCustomRequests[identifier];
+    if (!loadingRequest.isFinished) {
+      if (loadingRequest.isCancelled) {
+        _eventSink([self avAssetResourceLoadingRequestToDataDictionary:loadingRequest withIdentifier:identifier andType:cancelFetchDataKey]);
+      } else {
+        _eventSink([self avAssetResourceLoadingRequestToDataDictionary:loadingRequest withIdentifier:identifier andType:fetchDataKey]);
+      }
+    }
+  }
+}
+
+- (BOOL) resourceLoader:(AVAssetResourceLoader *)resourceLoader shouldWaitForLoadingOfRequestedResource:(AVAssetResourceLoadingRequest *)loadingRequest {
+  NSString *identifier = [[NSUUID alloc] init].UUIDString;
+  _pendingCustomRequests[identifier] = loadingRequest;
+  if (_eventSink != nil) {
+    _eventSink([self avAssetResourceLoadingRequestToDataDictionary:loadingRequest withIdentifier:identifier andType:fetchDataKey]);
+  }
+
+  return YES;
+}
+
+- (void)resourceLoader:(AVAssetResourceLoader *)resourceLoader didCancelLoadingRequest:(AVAssetResourceLoadingRequest *)loadingRequest {
+  NSString *identifier = [_pendingCustomRequests allKeysForObject:loadingRequest].firstObject;
+  [_pendingCustomRequests removeObjectForKey:identifier];
+  if (_eventSink != nil) {
+    _eventSink([self avAssetResourceLoadingRequestToDataDictionary:loadingRequest withIdentifier:identifier andType:cancelFetchDataKey]);
+  }
+}
+
+- (NSDictionary *) avAssetResourceLoadingRequestToDataDictionary:(AVAssetResourceLoadingRequest *)loadingRequest withIdentifier:(NSString *)identifier andType:(NSString *)eventType{
+  NSMutableDictionary *dict = [@{
+    @"event": eventType,
+    @"request": @{
+      @"id": identifier,
+      @"url": loadingRequest.request.URL.absoluteString,
+      @"headers": loadingRequest.request.allHTTPHeaderFields,
+      @"finished": loadingRequest.isFinished ? @"true" : @"false",
+      @"canceled": loadingRequest.isCancelled ? @"true" : @"false",
+      @"data_length": [NSNumber numberWithInteger:loadingRequest.dataRequest.requestedLength],
+      @"data_offset": [NSNumber numberWithLong:loadingRequest.dataRequest.requestedOffset],
+      @"data_request_all": loadingRequest.dataRequest.requestsAllDataToEndOfResource ? @"true" : @"false"
+    }
+  } mutableCopy];
+
+  if (loadingRequest.redirect != nil) {
+    dict[@"redirect_url"] = loadingRequest.redirect.URL.absoluteString;
+    dict[@"redirect_headers"] = loadingRequest.redirect.allHTTPHeaderFields;
+  }
+
+  return dict;
 }
 
 @end
@@ -575,7 +650,8 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
   } else if (input.uri) {
     player = [[FLTVideoPlayer alloc] initWithURL:[NSURL URLWithString:input.uri]
                                     frameUpdater:frameUpdater
-                                     httpHeaders:input.httpHeaders];
+                                     httpHeaders:input.httpHeaders
+                          usesCustomDataFetching:[input.formatHint isEqual: @"custom"]];
     return [self onPlayerSetup:player frameUpdater:frameUpdater];
   } else {
     *error = [FlutterError errorWithCode:@"video_player" message:@"not implemented" details:nil];

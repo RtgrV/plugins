@@ -175,6 +175,9 @@ enum DataSourceType {
 
   /// The video is available via contentUri. Android only.
   contentUri,
+
+  /// The video is fetched by a custom data source
+  custom,
 }
 
 /// The file format of the given video.
@@ -187,6 +190,9 @@ enum VideoFormat {
 
   /// Smooth Streaming.
   ss,
+
+  /// Implemented a custom format using [DataSourceType.custom]
+  custom,
 
   /// Any format other than the other ones defined in this enum.
   other,
@@ -210,6 +216,7 @@ class VideoEvent {
     this.duration,
     this.size,
     this.buffered,
+    this.dataRequestParameters,
   });
 
   /// The type of the event.
@@ -229,6 +236,12 @@ class VideoEvent {
   ///
   /// Only used if [eventType] is [VideoEventType.bufferingUpdate].
   final List<DurationRange>? buffered;
+
+  /// Parameters to fulfil a custom data request.
+  ///
+  /// Only used if [eventType] is [VideoEventType.fetchData] or
+  /// [VideoEventType.cancelFetchData].
+  final VideoDataRequestParameters? dataRequestParameters;
 
   @override
   bool operator ==(Object other) {
@@ -268,6 +281,12 @@ enum VideoEventType {
 
   /// The video stopped to buffer.
   bufferingEnd,
+
+  /// The video player requests to fetch data.
+  fetchData,
+
+  /// The video player requests to cancel fetching data.
+  cancelFetchData,
 
   /// An unknown event has been received.
   unknown,
@@ -336,6 +355,72 @@ class DurationRange {
 
   @override
   int get hashCode => start.hashCode ^ end.hashCode;
+}
+
+/// The [VideoDataRequestParameters] contains the parameters to fulfill a request.
+@immutable
+class VideoDataRequestParameters {
+  /// Creates an instance of [VideoDataRequestParameters].
+  ///
+  /// The [id], [uri], [headers], [finished] and [canceled] arguments are required.
+  ///
+  // TODO(stuartmorgan): Temporarily suppress warnings about not using const
+  // in all of the other video player packages, fix this, and then update
+  // the other packages to use const.
+  // ignore: prefer_const_constructors_in_immutables
+  VideoDataRequestParameters({
+    required this.id,
+    required this.uri,
+    required this.headers,
+    required this.finished,
+    required this.canceled,
+    this.redirectUri,
+    this.redirectHeaders,
+    this.dataLength,
+    this.dataOffset,
+    this.requestsAllData,
+  });
+
+  final String id;
+  final Uri uri;
+  final Map<String, String> headers;
+  final bool finished;
+  final bool canceled;
+  final Uri? redirectUri;
+  final Map<String, String>? redirectHeaders;
+  final int? dataLength;
+  final int? dataOffset;
+  final bool? requestsAllData;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is VideoDataRequestParameters &&
+            runtimeType == other.runtimeType &&
+            id == other.id &&
+            uri == other.uri &&
+            headers == other.headers &&
+            finished == other.finished &&
+            canceled == other.canceled &&
+            redirectUri == other.redirectUri &&
+            redirectHeaders == other.redirectHeaders &&
+            dataLength == other.dataLength &&
+            dataOffset == other.dataOffset &&
+            requestsAllData == other.requestsAllData;
+  }
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      uri.hashCode ^
+      headers.hashCode ^
+      finished.hashCode ^
+      canceled.hashCode ^
+      redirectUri.hashCode ^
+      redirectHeaders.hashCode ^
+      dataLength.hashCode ^
+      dataOffset.hashCode ^
+      requestsAllData.hashCode;
 }
 
 /// [VideoPlayerOptions] can be optionally used to set additional player settings
