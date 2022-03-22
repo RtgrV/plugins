@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -102,6 +104,16 @@ abstract class VideoPlayerPlatform extends PlatformInterface {
   /// Sets the audio mode to mix with other sources
   Future<void> setMixWithOthers(bool mixWithOthers) {
     throw UnimplementedError('setMixWithOthers() has not been implemented.');
+  }
+
+  /// Sends fetched video data for given request back to the player
+  Future<void> setData(
+    int textureId,
+    String requestId,
+    Map<String, String> headers,
+    Uint8List data,
+  ) {
+    throw UnimplementedError('setData() has not been implemented.');
   }
 }
 

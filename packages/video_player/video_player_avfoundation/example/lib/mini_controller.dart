@@ -212,6 +212,13 @@ class MiniController extends ValueNotifier<VideoPlayerValue> {
           uri: dataSource,
         );
         break;
+      case DataSourceType.custom:
+        dataSourceDescription = DataSource(
+          sourceType: DataSourceType.custom,
+          uri: dataSource,
+          formatHint: VideoFormat.custom,
+        );
+        break;
     }
 
     _textureId = (await _platform.create(dataSourceDescription)) ??
@@ -244,6 +251,8 @@ class MiniController extends ValueNotifier<VideoPlayerValue> {
         case VideoEventType.bufferingEnd:
           value = value.copyWith(isBuffering: false);
           break;
+        case VideoEventType.fetchData:
+        case VideoEventType.cancelFetchData:
         case VideoEventType.unknown:
           break;
       }

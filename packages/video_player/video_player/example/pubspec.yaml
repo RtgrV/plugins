@@ -7,8 +7,10 @@ environment:
   flutter: ">=2.10.0"
 
 dependencies:
+  async:
   flutter:
     sdk: flutter
+  http:
   video_player:
     # When depending on this package from a real application you should use:
     #   video_player: ^x.y.z

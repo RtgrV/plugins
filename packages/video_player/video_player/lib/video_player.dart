@@ -4,6 +4,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -322,6 +323,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   final void Function(
     VideoDataRequestParameters parameters,
     bool cancelRequest,
+    void Function(Map<String, String> headers, Uint8List bytes)? didFetchData,
   )? onFetchDataRequest;
 
   ClosedCaptionFile? _closedCaptionFile;
@@ -445,7 +447,15 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
             throw StateError(
                 "Controller was requested to fetch data, but no parameters were given");
           }
-          onFetchDataRequest?.call(event.dataRequestParameters!, false);
+          onFetchDataRequest?.call(event.dataRequestParameters!, false,
+              (headers, data) {
+            _videoPlayerPlatform.setData(
+              textureId,
+              event.dataRequestParameters!.id,
+              headers,
+              data,
+            );
+          });
           break;
         case VideoEventType.cancelFetchData:
           if (onFetchDataRequest == null) {
@@ -456,7 +466,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
             throw StateError(
                 "Controller was requested to cancel the fetch of data, but no parameters were given");
           }
-          onFetchDataRequest?.call(event.dataRequestParameters!, true);
+          onFetchDataRequest?.call(event.dataRequestParameters!, true, null);
           break;
       }
     }

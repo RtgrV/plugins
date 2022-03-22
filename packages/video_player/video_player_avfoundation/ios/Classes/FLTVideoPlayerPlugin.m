@@ -457,6 +457,18 @@ NS_INLINE CGFloat radiansToDegrees(CGFloat radians) {
   _player.rate = speed;
 }
 
+- (void)provideVideoData:(NSData *)data withHeaders:(NSDictionary<NSString *, NSString *> *)headers forRequestId:(NSString *)requestId {
+  AVAssetResourceLoadingRequest *request = self.pendingCustomRequests[requestId];
+  if (request.contentInformationRequest != nil) {
+    request.contentInformationRequest.contentType = headers[@"content-type"];
+    request.contentInformationRequest.contentLength = [[[headers[@"content-range"] componentsSeparatedByString:@"/"] lastObject] integerValue];
+    request.contentInformationRequest.byteRangeAccessSupported = [headers[@"accept-ranges"] isEqual:@"bytes"];
+    [request finishLoading];
+  } else {
+    [request.dataRequest respondWithData:data];
+  }
+}
+
 - (CVPixelBufferRef)copyPixelBuffer {
   CMTime outputItemTime = [_videoOutput itemTimeForHostTime:CACurrentMediaTime()];
   if ([_videoOutput hasNewPixelBufferForItemTime:outputItemTime]) {
@@ -728,6 +740,11 @@ NSString * const cancelFetchDataKey = @"cancel_fetch_data";
   } else {
     [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback error:nil];
   }
+}
+
+- (void)receiveData:(FLTDataMessage *)msg error:(FlutterError * _Nullable __autoreleasing *)error {
+  FLTVideoPlayer *player = self.playersByTextureId[msg.textureId];
+  [player provideVideoData:msg.data.data withHeaders:msg.headers forRequestId:msg.requestId];
 }
 
 @end

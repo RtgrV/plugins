@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 import 'dart:async';
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/services.dart';
@@ -117,6 +118,23 @@ class AVFoundationVideoPlayer extends VideoPlayerPlatform {
     final PositionMessage response =
         await _api.position(TextureMessage(textureId: textureId));
     return Duration(milliseconds: response.position);
+  }
+
+  @override
+  Future<void> setData(
+    int textureId,
+    String requestId,
+    Map<String, String> headers,
+    Uint8List data,
+  ) {
+    return _api.setData(
+      DataMessage(
+        textureId: textureId,
+        requestId: requestId,
+        headers: headers,
+        data: data,
+      ),
+    );
   }
 
   @override

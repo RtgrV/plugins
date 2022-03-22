@@ -6,9 +6,10 @@
 
 /// An example of using the plugin, controlling lifecycle and playback of the
 /// video.
-
+import 'package:async/async.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 
 void main() {
@@ -275,14 +276,39 @@ class _CustomRemoteVideo extends StatefulWidget {
 class _CustomRemoteVideoState extends State<_CustomRemoteVideo> {
   late VideoPlayerController _controller;
 
+  final Map<String, CancelableOperation> downloadOperations = {};
+
   @override
   void initState() {
     super.initState();
     _controller = VideoPlayerController.custom(
       'audio://flutter.github.io/assets-for-api-docs/assets/videos/bee.mp4',
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
-      onFetchDataRequest: (request, isCancelled) {
-        print(request.uri);
+      onFetchDataRequest: (request, isCancelled, didFetchData) {
+        if (!isCancelled) {
+          final operation = CancelableOperation.fromFuture(
+            http.get(
+              Uri.https(
+                request.uri.authority,
+                request.uri.path,
+                request.uri.queryParameters,
+              ),
+              headers: {
+                "Range":
+                    "bytes=${request.dataOffset!}-${request.dataLength! - 1}",
+                ...request.headers,
+              },
+            ),
+          );
+          downloadOperations[request.id] = operation;
+          operation.then((response) {
+            downloadOperations.remove(request.id);
+            didFetchData?.call(response.headers, response.bodyBytes);
+          });
+        } else {
+          downloadOperations[request.id]?.cancel();
+          downloadOperations.remove(request.id);
+        }
       },
     );
 
